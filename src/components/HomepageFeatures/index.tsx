@@ -11,32 +11,32 @@ type FeatureItem = {
 
 const FeatureList: FeatureItem[] = [
   {
-    title: 'Easy to Use',
+    title: 'Flexible Deployment',
     Svg: require('@site/static/img/undraw_docusaurus_mountain.svg').default,
     description: (
       <>
-        Docusaurus was designed from the ground up to be easily installed and
-        used to get your website up and running quickly.
+        Choose between on-premises deployment via Docker containers or our fully managed hosted solution.
+        Scale from single-machine deployments to enterprise-grade Kubernetes clusters.
       </>
     ),
   },
   {
-    title: 'Focus on What Matters',
+    title: 'Enterprise Security',
     Svg: require('@site/static/img/undraw_docusaurus_tree.svg').default,
     description: (
       <>
-        Docusaurus lets you focus on your docs, and we&apos;ll do the chores. Go
-        ahead and move your docs into the <code>docs</code> directory.
+        Seamlessly integrate with your existing OIDC SSO infrastructure. Maintain full control over your data
+        and security policies with our enterprise-grade authentication and authorization.
       </>
     ),
   },
   {
-    title: 'Powered by React',
+    title: 'White Glove Service',
     Svg: require('@site/static/img/undraw_docusaurus_react.svg').default,
     description: (
       <>
-        Extend or customize your website layout by reusing React. Docusaurus can
-        be extended while reusing the same header and footer.
+        Get expert assistance with deployment, configuration, and ongoing maintenance.
+        Our dedicated support team ensures your TalkingTree deployment runs smoothly.
       </>
     ),
   },
