@@ -92,12 +92,12 @@ save_env() {
     AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_REGION NEXT_PUBLIC_AWS_BUCKET_NAME
     OPENAI_API_KEY
     AZURE_API_KEY AZURE_ENDPOINT AZURE_API_VERSION AZURE_DEPLOYMENT_NAME API_TYPE
+    AZURE_OPENAI_API_VERSION AZURE_OPENAI_DEPLOYMENT WHISPER_PROVIDER
     DB_MONGO_USER DB_MONGO_PASSWORD DB_MONGO_DATABASE DB_MONGO_COUNSEL_DB
     DB_MONGO_DOCGEN DB_MONGO_LIMIT DB_MONGO_CHATBOT
     SESSION_SECRET
     OIDC_BASE_URL OIDC_ISSUER OIDC_CLIENT_ID OIDC_ADMIN
     NEXT_PUBLIC_BRAND_IMG NEXT_PUBLIC_TITLE NEXT_PUBLIC_CONTACT NEXT_PUBLIC_HIDE_COPYRIGHT
-    STRIPE_WEBHOOK_SECRET
   )
 
   for var_name in "${vars_to_save[@]}"; do
@@ -161,6 +161,9 @@ if [ "$API_TYPE" = "AZURE" ]; then
     prompt_variable AZURE_ENDPOINT "Enter Azure Endpoint (e.g., https://your-resource.openai.azure.com/)" "${AZURE_ENDPOINT}"
     prompt_variable AZURE_API_VERSION "Enter Azure API Version (e.g., 2023-07-01-preview)" "${AZURE_API_VERSION}"
     prompt_variable AZURE_DEPLOYMENT_NAME "Enter Azure Deployment Name (for chat models)" "${AZURE_DEPLOYMENT_NAME}"
+    prompt_variable AZURE_OPENAI_API_VERSION "Enter Azure OpenAI API Version" "${AZURE_OPENAI_API_VERSION:-2023-07-01-preview}"
+    prompt_variable AZURE_OPENAI_DEPLOYMENT "Enter Azure OpenAI Deployment Name" "${AZURE_OPENAI_DEPLOYMENT}"
+    WHISPER_PROVIDER="azure"
     echo ""
 fi
 
@@ -220,17 +223,22 @@ echo ""
 
 # Frontend Customization
 echo "--- Frontend Customization (optional) ---"
-prompt_variable NEXT_PUBLIC_BRAND_IMG "Enter URL for custom brand image" "${NEXT_PUBLIC_BRAND_IMG}"
-prompt_variable NEXT_PUBLIC_TITLE "Enter custom title for the application" "${NEXT_PUBLIC_TITLE:-Talking Tree}"
-prompt_variable NEXT_PUBLIC_CONTACT "Enter contact email/info for support page" "${NEXT_PUBLIC_CONTACT}"
-prompt_variable NEXT_PUBLIC_HIDE_COPYRIGHT "Hide copyright footer? (true/false)" "${NEXT_PUBLIC_HIDE_COPYRIGHT:-false}"
-echo ""
+read -p "Would you like to customize the deployment branding? (y/n) [n]: " customize_branding
+customize_branding=${customize_branding:-n}
 
-# Stripe Configuration
-echo "--- Stripe Configuration (optional) ---"
-prompt_variable STRIPE_WEBHOOK_SECRET "Enter Stripe Webhook Secret" "${STRIPE_WEBHOOK_SECRET}" true
+if [[ "$customize_branding" =~ ^[Yy]$ ]]; then
+    prompt_variable NEXT_PUBLIC_BRAND_IMG "Enter URL for custom brand image" "${NEXT_PUBLIC_BRAND_IMG}"
+    prompt_variable NEXT_PUBLIC_TITLE "Enter custom title for the application" "${NEXT_PUBLIC_TITLE:-Talking Tree}"
+    prompt_variable NEXT_PUBLIC_CONTACT "Enter contact email/info for support page" "${NEXT_PUBLIC_CONTACT}"
+    prompt_variable NEXT_PUBLIC_HIDE_COPYRIGHT "Hide copyright footer? (true/false)" "${NEXT_PUBLIC_HIDE_COPYRIGHT:-false}"
+else
+    echo "Using default branding settings."
+    NEXT_PUBLIC_TITLE=""
+    NEXT_PUBLIC_HIDE_COPYRIGHT=""
+    NEXT_PUBLIC_BRAND_IMG=""
+    NEXT_PUBLIC_CONTACT=""
+fi
 echo ""
-
 # Save configuration to .env file
 save_env
 echo ""
@@ -240,34 +248,31 @@ echo "--- AWS ECR Docker Login ---"
 if [ -n "$AWS_REGION" ]; then
     # Check if AWS CLI is installed
     if ! command -v aws &> /dev/null; then
-        echo "AWS CLI is not installed. Skipping ECR login."
-        echo "Please install AWS CLI if your images are in ECR and require authentication: https://aws.amazon.com/cli/"
-    else
-        echo "Attempting to login to AWS ECR for account $AWS_ACCOUNT_ID in region $AWS_REGION..."
-        # AWS CLI will use AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN from env if set,
-        # otherwise its configured credentials/profile.
-        # The load_env function already exported these if they were in .env or set by prompts.
-        if aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com"; then
-            echo "AWS ECR login successful for $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com."
-        else
-            echo "AWS ECR login failed. Potential issues:" >&2
-            echo "- Incorrect AWS Region, Access Key ID, or Secret Access Key." >&2
-            echo "- AWS CLI not configured correctly (if keys were not provided to this script)." >&2
-            echo "- Insufficient IAM permissions for ECR." >&2
-            echo "You may need to configure AWS CLI or ensure the provided credentials are correct." >&2
-        fi
+        echo "ERROR: AWS CLI is not installed. ECR login is required." >&2
+        echo "Please install AWS CLI: https://aws.amazon.com/cli/" >&2
+        exit 1
     fi
+    
+    echo "Authenticating with AWS ECR for account $AWS_ACCOUNT_ID in region $AWS_REGION..."
+    if ! aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com"; then
+        echo "ERROR: AWS ECR login failed. Please check:" >&2
+        echo "- AWS Region, Access Key ID, and Secret Access Key are correct" >&2
+        echo "- AWS CLI is configured properly" >&2
+        echo "- IAM permissions include ECR access" >&2
+        exit 1
+    fi
+    echo "AWS ECR login successful for $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com."
 else
-  echo "AWS_REGION not set. Skipping ECR login."
-  echo "If your images are in ECR and require authentication, 'docker-compose pull' might fail."
+    echo "ERROR: AWS_REGION is required for ECR login." >&2
+    exit 1
 fi
 echo ""
 
 # Run Docker Compose
 echo "--- Docker Compose ---"
-if ! command -v docker-compose &> /dev/null; then
-    echo "docker-compose command not found. Please install it." >&2
-    echo "See: https://docs.docker.com/compose/install/" >&2
+if ! command -v docker &> /dev/null; then
+    echo "docker command not found. Please install it." >&2
+    echo "See: https://docs.docker.com/engine/install/" >&2
     exit 1
 fi
 
@@ -276,33 +281,31 @@ if [ "$UPGRADE" = true ]; then
     
     # Ensure ECR login if AWS region is set
     if [ -n "$AWS_REGION" ]; then
-        if ! command -v aws &> /dev/null; then
-            echo "AWS CLI is not installed. Skipping ECR login."
-            echo "Please install AWS CLI if your images are in ECR and require authentication: https://aws.amazon.com/cli/"
-        else
-            echo "Authenticating with AWS ECR..."
-            if aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com"; then
-                echo "AWS ECR login successful."
-            else
-                echo "AWS ECR login failed. Continuing with upgrade anyway..." >&2
-            fi
+        echo "Authenticating with AWS ECR..."
+        if ! aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com"; then
+            echo "ERROR: AWS ECR login failed. Please check:" >&2
+            echo "- AWS Region, Access Key ID, and Secret Access Key are correct" >&2
+            echo "- AWS CLI is configured properly" >&2
+            echo "- IAM permissions include ECR access" >&2
+            exit 1
         fi
+        echo "AWS ECR login successful."
     fi
     
     echo "Pulling latest images..."
-    docker-compose pull
+    docker compose pull
     
     echo "Stopping existing containers..."
-    docker-compose down
+    docker compose down
     
     echo "Starting containers with latest images..."
-    docker-compose up -d
+    docker compose up -d
     
     if [ $? -eq 0 ]; then
         echo ""
         echo "---------------------------------------------------------------------"
         echo "Containers successfully upgraded and restarted!"
-        echo "You can view logs using: docker-compose logs -f"
+        echo "You can view logs using: docker compose logs -f"
         echo "---------------------------------------------------------------------"
     else
         echo ""
@@ -313,27 +316,27 @@ if [ "$UPGRADE" = true ]; then
         exit 1
     fi
 else
-    echo "Starting Docker Compose services in detached mode (docker-compose up -d)..."
+    echo "Starting Docker Compose services in detached mode (docker compose up -d)..."
     echo "This may take a while if images need to be pulled."
-    docker-compose up -d
+    docker compose up -d
 
     if [ $? -eq 0 ]; then
         echo ""
         echo "---------------------------------------------------------------------"
         echo "Application services started successfully!"
-        echo "You can view logs using: docker-compose logs -f"
-        echo "To stop services: docker-compose down"
+        echo "You can view logs using: docker compose logs -f"
+        echo "To stop services: docker compose down"
         echo "To reconfigure, run this script with the --reconfigure flag: ./setup_env.sh --reconfigure"
         echo "To upgrade containers, run this script with the --upgrade flag: ./setup_env.sh --upgrade"
         echo "---------------------------------------------------------------------"
     else
         echo ""
         echo "---------------------------------------------------------------------"
-        echo "ERROR: docker-compose up -d failed." >&2
+        echo "ERROR: docker compose up -d failed." >&2
         echo "Check the output above for errors. You might want to run:" >&2
-        echo "  docker-compose config   (to validate your docker-compose.yml and .env)" >&2
-        echo "  docker-compose pull     (to see if image pulling is the issue)" >&2
-        echo "  docker-compose up       (without -d, to see logs in foreground)" >&2
+        echo "  docker compose config   (to validate your docker-compose.yml and .env)" >&2
+        echo "  docker compose pull     (to see if image pulling is the issue)" >&2
+        echo "  docker compose up       (without -d, to see logs in foreground)" >&2
         echo "---------------------------------------------------------------------"
         exit 1
     fi
