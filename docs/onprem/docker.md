@@ -6,6 +6,10 @@ sidebar_position: 3
 
 This guide will walk you through the process of accessing and downloading Docker images from our Amazon ECR (Elastic Container Registry) repositories.
 
+:::tip
+For convenience, we provide ready-to-use setup scripts in the [`examples`](https://github.com/talkingtree-ai/enterprise/tree/main/examples) folder. These scripts implement the authentication process described below and can be run directly after configuring your credentials.
+:::
+
 ## Prerequisites
 
 1. An AWS account
@@ -88,12 +92,12 @@ We maintain the following Docker images:
 To pull an image, use the following command:
 
 ```bash
-docker pull <ECR_REPOSITORY_URL>/<IMAGE_NAME>:<TAG>
+docker pull ${ACCOUNT_ID_VENDOR}.dkr.ecr.${AWS_REGION}.amazonaws.com/<IMAGE_NAME>:<TAG>
 ```
 
 For example:
 ```bash
-docker pull 123456789012.dkr.ecr.us-east-1.amazonaws.com/frontend:latest
+docker pull ${ACCOUNT_ID_VENDOR}.dkr.ecr.${AWS_REGION}.amazonaws.com/frontend:latest
 ```
 
 ## Troubleshooting
@@ -101,14 +105,14 @@ docker pull 123456789012.dkr.ecr.us-east-1.amazonaws.com/frontend:latest
 ### Common Issues
 
 1. **Authentication Errors**
-   - Ensure you've properly assumed the role
-   - Verify your AWS credentials are correctly set
-   - Check that your account has been added to the allowed principals
+   - Ensure you've properly assumed the role with the correct EXTERNAL_ID
+   - Verify your AWS CLI is configured with a valid profile
+   - Check that the temporary credentials are properly exported
 
 2. **Permission Denied**
    - Confirm you're using the correct repository URL
-   - Verify you have the latest role ARN
-   - Check that your AWS session hasn't expired
+   - Verify you have the latest ROLE_ARN and EXTERNAL_ID
+   - Check that your AWS session hasn't expired (credentials last 1 hour by default)
 
 3. **Image Not Found**
    - Verify the image name and tag
@@ -128,7 +132,7 @@ If you encounter any issues:
 ## Security Notes
 
 - Never share your AWS credentials
-- Rotate your AWS access keys regularly
+- The temporary credentials expire after 1 hour by default
 - Use the read-only role only for pulling images
 - Report any security concerns immediately
 
@@ -144,5 +148,5 @@ If you encounter any issues:
 
 For additional help or to report issues:
 - Email: connect@talkingtree.app
-- Please have your AWS account ID availble
+- Please have your AWS account ID available
 - Provide detailed error messages and steps to reproduce
